@@ -7,8 +7,6 @@ import numpy as np
 from scipy.ndimage import gaussian_filter, find_objects
 from skimage.measure import find_contours
 
-# ----------------------------------------------------------------------------
-
 def generate_layers(height_data, height_step, step_xy, blur_sigma, threshold, z_scale):
     """
     Generate elevation layers from height data.
@@ -24,7 +22,6 @@ def generate_layers(height_data, height_step, step_xy, blur_sigma, threshold, z_
     Returns:
         tuple: (layer_masks, z_list, coarse_shape)
     """
-    # --- Decimate and crop to the canton extent ------------------------------------
     coarse = height_data[::step_xy, ::step_xy]
     del height_data
     gc.collect()
@@ -40,11 +37,9 @@ def generate_layers(height_data, height_step, step_xy, blur_sigma, threshold, z_
     n_layers = (maxHeight - minHeight) // height_step + 1
     print(f"Extent {minHeight}-{maxHeight} m | grid {coarse.shape} | {n_layers} layers")
 
-    # Track the actual z positions used
     z_start = minHeight
     z_list = list(range(minHeight, maxHeight + height_step, height_step))
     
-    # --- Pre-compute all valid layer masks so we can easily look ahead -------------
     layer_masks = []
     i=0
     for z in z_list:
@@ -53,9 +48,6 @@ def generate_layers(height_data, height_step, step_xy, blur_sigma, threshold, z_
         layer = gaussian_filter(layer, blur_sigma) < threshold
         print(f"Layer {i} has sum: {layer.sum()}")
         layer_masks.append(layer)
-        #if layer.sum() < 100 or layer.all():
-        #    layer_masks.append(None)
-        #else:
         #    layer_masks.append(layer)
 
     return layer_masks, z_list, coarse.shape

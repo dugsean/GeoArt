@@ -31,7 +31,6 @@ def create_3d_model(layer_masks, z_list, coarse_shape, output_dir, step_xy,
     base_z = min(z_list) * z_scale
     ny_grid, nx_grid = coarse_shape
 
-    # --- Build and render ---------------------------------------------------------
     plotter = pv.Plotter(window_size=(1400, 1000))
     plotter.set_background("white")
 
@@ -54,11 +53,9 @@ def create_3d_model(layer_masks, z_list, coarse_shape, output_dir, step_xy,
         if slab.n_points == 0:
             continue
 
-        # Thickness of each physical layer in scaled space
         layer_thickness = height_step * z_scale
         slab = slab.extrude((0, 0, layer_thickness), capping=True)
         
-        # Position each layer consecutively with zero gap: base + index * thickness
         current_z = (min(z_list) * z_scale) + (i * layer_thickness)
         slab.translate((0, 0, current_z), inplace=True)
 
@@ -67,7 +64,6 @@ def create_3d_model(layer_masks, z_list, coarse_shape, output_dir, step_xy,
                          opacity=1.0, smooth_shading=True)
         del slab
 
-    # --- Add a solid rectangular black base underneath ----------------------------
     ny, nx = coarse_shape
     xmin, ymin = 0, 0
     xmax, ymax = nx * CELL, ny * CELL
@@ -78,14 +74,12 @@ def create_3d_model(layer_masks, z_list, coarse_shape, output_dir, step_xy,
     base_box = pv.Box(bounds=(xmin, xmax, ymin, ymax, base_z, min(z_list) * z_scale))
     plotter.add_mesh(base_box, color="black", opacity=1.0)
 
-    # --- Camera and render ---------------------------------------------------------
     plotter.add_axes()
     ny, nx = coarse_shape
     center_x = (nx * CELL) / 2
     center_y = (ny * CELL) / 2
     center_z = (max(z_list) * z_scale) / 2
 
-    # Position the camera off to the side, high up, and looking down at the center
     plotter.camera_position = [
         (center_x - 1.5 * nx * CELL, center_y - 1.5 * ny * CELL, center_z + 40000), # Camera location (X, Y, Z)
         (center_x, center_y, center_z),                                            # Look-at focal point

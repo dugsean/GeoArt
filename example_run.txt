@@ -1,0 +1,14 @@
+# Default run (uses config.json)
+python main.py
+
+# Override specific settings
+python main.py --height-step 100 --step-xy 15 --blur-sigma 10.0 --canton-name Neuch
+
+# Disable inner nesting
+python main.py --no-nest-inner
+
+# Use a custom config file
+python main.py --config my_project.json
+
+# Save the effective config
+python main.py --save-config snapshot.json

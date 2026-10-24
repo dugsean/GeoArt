@@ -20,7 +20,6 @@ def load_and_process_data(data_dir, canton_name, canton_shapefile_path):
     Returns:
         tuple: (height_array, transform, crs)
     """
-    # --- Load and merge tiles -----------------------------------------------------
     datasets = [rasterio.open(p) for p in sorted(glob.glob(os.path.join(data_dir, "*.tif")))]
     crs = datasets[0].crs                      # keep before closing!
     mosaic, transform = merge(datasets)
@@ -33,7 +32,6 @@ def load_and_process_data(data_dir, canton_name, canton_shapefile_path):
     del mosaic
     gc.collect()
 
-    # --- Clip to canton -----------------------------------------------------------
     cantons = gpd.read_file(canton_shapefile_path)
     ne = cantons[cantons["NAME"].str.contains(canton_name, case=False, na=False)]
     ne = ne.to_crs(crs)

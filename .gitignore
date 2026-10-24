@@ -2,8 +2,11 @@
 !.gitignore
 !README.md
 !main.py
+!config.py
+!config.json
+!example_run.txt
 !data_loader.py
 !layer_generator.py
 !svg_exporter.py
+!nesting.py
 !visualization.py
-!3e8ef090-ce61-44d3-bfcf-0d7745b15a31
