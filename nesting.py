@@ -213,6 +213,7 @@ def _place_labels_post(sheets, regions, mm_per_pixel, cpx, W, H):
     for b, entries in sorted(sheets.items()):
         part_masks = []
         ring_masks = []
+        ring_masks_grown = []  # pre-dilated ring masks
         label_zones = []
         for e in entries:
             r = e["r"]
@@ -256,6 +257,12 @@ def _place_labels_post(sheets, regions, mm_per_pixel, cpx, W, H):
                     ring[ry0:ry1, rx0:rx1] &= ~imask[ry0 - iy0:ry1 - iy0,
                                                        rx0 - ix0:rx1 - ix0]
             ring_masks.append((0, 0, ring))
+            # Pre-dilate ring mask once for overlap checks
+            if label_grow > 0:
+                ring_grown = ndimage.binary_dilation(ring, iterations=label_grow)
+            else:
+                ring_grown = ring
+            ring_masks_grown.append((0, 0, ring_grown))
 
             lz = r.get("label_zone")
             if lz is not None:
@@ -330,21 +337,18 @@ def _place_labels_post(sheets, regions, mm_per_pixel, cpx, W, H):
                 if not zmask[ly0:ly1, lx0:lx1].all():
                     return False  # label bbox not entirely inside label zone
 
-                for pj, (py0, px0, pmask) in enumerate(ring_masks):
+                for pj, (py0, px0, pmask) in enumerate(ring_masks_grown):
                     if pj == pi:
-                        continue  # skip self
-                    other_grown = ndimage.binary_dilation(pmask, iterations=label_grow) if label_grow > 0 else pmask
-                    gh, gw = other_grown.shape
-                    dpy0 = py0 - label_grow
-                    dpx0 = px0 - label_grow
-                    oy0 = max(gy0c, dpy0)
-                    oy1 = min(gy0c + lb.shape[0], dpy0 + gh)
-                    ox0 = max(gx0c, dpx0)
-                    ox1 = min(gx0c + lb.shape[1], dpx0 + gw)
+                        continue
+                    gh, gw = pmask.shape
+                    oy0 = max(gy0c, py0)
+                    oy1 = min(gy0c + lb.shape[0], py0 + gh)
+                    ox0 = max(gx0c, px0)
+                    ox1 = min(gx0c + lb.shape[1], px0 + gw)
                     if oy1 <= oy0 or ox1 <= ox0:
                         continue
                     sub_lb = lb[oy0 - gy0c:oy1 - gy0c, ox0 - gx0c:ox1 - gx0c]
-                    sub_pm = other_grown[oy0 - dpy0:oy1 - dpy0, ox0 - dpx0:ox1 - dpx0]
+                    sub_pm = pmask[oy0 - py0:oy1 - py0, ox0 - px0:ox1 - px0]
                     if (sub_lb & sub_pm).any():
                         return False
 
@@ -384,21 +388,18 @@ def _place_labels_post(sheets, regions, mm_per_pixel, cpx, W, H):
                 if not zmask[ly0:ly1, lx0:lx1].all():
                     return False
 
-                for pj, (py0, px0, pmask) in enumerate(ring_masks):
+                for pj, (py0, px0, pmask) in enumerate(ring_masks_grown):
                     if pj == pi:
                         continue
-                    other_grown = ndimage.binary_dilation(pmask, iterations=label_grow) if label_grow > 0 else pmask
-                    gh, gw = other_grown.shape
-                    dpy0 = py0 - label_grow
-                    dpx0 = px0 - label_grow
-                    oy0 = max(gy0c, dpy0)
-                    oy1 = min(gy0c + lb.shape[0], dpy0 + gh)
-                    ox0 = max(gx0c, dpx0)
-                    ox1 = min(gx0c + lb.shape[1], dpx0 + gw)
+                    gh, gw = pmask.shape
+                    oy0 = max(gy0c, py0)
+                    oy1 = min(gy0c + lb.shape[0], py0 + gh)
+                    ox0 = max(gx0c, px0)
+                    ox1 = min(gx0c + lb.shape[1], px0 + gw)
                     if oy1 <= oy0 or ox1 <= ox0:
                         continue
                     sub_lb = lb[oy0 - gy0c:oy1 - gy0c, ox0 - gx0c:ox1 - gx0c]
-                    sub_pm = other_grown[oy0 - dpy0:oy1 - dpy0, ox0 - dpx0:ox1 - dpx0]
+                    sub_pm = pmask[oy0 - py0:oy1 - py0, ox0 - px0:ox1 - px0]
                     if (sub_lb & sub_pm).any():
                         return False
 
@@ -439,21 +440,18 @@ def _place_labels_post(sheets, regions, mm_per_pixel, cpx, W, H):
                 zone_full[zsy0:zsy1, zsx0:zsx1] = zmask[zsy0 - zy0:zsy1 - zy0,
                                                           zsx0 - zx0:zsx1 - zx0]
 
-            for pj, (opy0, opx0, opmask) in enumerate(ring_masks):
+            for pj, (opy0, opx0, opmask) in enumerate(ring_masks_grown):
                 if pj == pi:
                     continue
-                other_grown = ndimage.binary_dilation(opmask, iterations=label_grow) if label_grow > 0 else opmask
-                gh, gw = other_grown.shape
-                dpy0 = opy0 - label_grow
-                dpx0 = opx0 - label_grow
-                gy0c2 = max(0, dpy0)
-                gx0c2 = max(0, dpx0)
-                gy1c2 = min(H, dpy0 + gh)
-                gx1c2 = min(W, dpx0 + gw)
+                gh, gw = opmask.shape
+                gy0c2 = max(0, opy0)
+                gx0c2 = max(0, opx0)
+                gy1c2 = min(H, opy0 + gh)
+                gx1c2 = min(W, opx0 + gw)
                 if gy1c2 > gy0c2 and gx1c2 > gx0c2:
-                    zone_full[gy0c2:gy1c2, gx0c2:gx1c2] &= ~other_grown[
-                        gy0c2 - dpy0:gy1c2 - dpy0,
-                        gx0c2 - dpx0:gx1c2 - dpx0]
+                    zone_full[gy0c2:gy1c2, gx0c2:gx1c2] &= ~opmask[
+                        gy0c2 - opy0:gy1c2 - opy0,
+                        gx0c2 - opx0:gx1c2 - opx0]
 
             zone_full &= ~label_occ
 
@@ -470,21 +468,18 @@ def _place_labels_post(sheets, regions, mm_per_pixel, cpx, W, H):
                     verify = True
                 elif attempt == 1:
                     search_zone = zone_full.copy()
-                    for pj, (opy0, opx0, opmask) in enumerate(ring_masks):
+                    for pj, (opy0, opx0, opmask) in enumerate(ring_masks_grown):
                         if pj == pi:
                             continue
-                        other_grown = ndimage.binary_dilation(opmask, iterations=label_grow) if label_grow > 0 else opmask
-                        gh, gw = other_grown.shape
-                        dpy0 = opy0 - label_grow
-                        dpx0 = opx0 - label_grow
-                        gy0c2 = max(0, dpy0)
-                        gx0c2 = max(0, dpx0)
-                        gy1c2 = min(H, dpy0 + gh)
-                        gx1c2 = min(W, dpx0 + gw)
+                        gh, gw = opmask.shape
+                        gy0c2 = max(0, opy0)
+                        gx0c2 = max(0, opx0)
+                        gy1c2 = min(H, opy0 + gh)
+                        gx1c2 = min(W, opx0 + gw)
                         if gy1c2 > gy0c2 and gx1c2 > gx0c2:
-                            search_zone[gy0c2:gy1c2, gx0c2:gx1c2] &= ~other_grown[
-                                gy0c2 - dpy0:gy1c2 - dpy0,
-                                gx0c2 - dpx0:gx1c2 - dpx0]
+                            search_zone[gy0c2:gy1c2, gx0c2:gx1c2] &= ~opmask[
+                                gy0c2 - opy0:gy1c2 - opy0,
+                                gx0c2 - opx0:gx1c2 - opx0]
                     if label_grow > 0:
                         search_zone = ndimage.binary_erosion(
                             search_zone, iterations=max(1, label_grow // 2))
@@ -494,21 +489,18 @@ def _place_labels_post(sheets, regions, mm_per_pixel, cpx, W, H):
                     if zsy1 > zsy0 and zsx1 > zsx0:
                         search_zone[zsy0:zsy1, zsx0:zsx1] = zmask[zsy0 - zy0:zsy1 - zy0,
                                                                      zsx0 - zx0:zsx1 - zx0]
-                    for pj, (opy0, opx0, opmask) in enumerate(ring_masks):
+                    for pj, (opy0, opx0, opmask) in enumerate(ring_masks_grown):
                         if pj == pi:
                             continue
-                        other_grown = ndimage.binary_dilation(opmask, iterations=label_grow) if label_grow > 0 else opmask
-                        gh, gw = other_grown.shape
-                        dpy0 = opy0 - label_grow
-                        dpx0 = opx0 - label_grow
-                        gy0c2 = max(0, dpy0)
-                        gx0c2 = max(0, dpx0)
-                        gy1c2 = min(H, dpy0 + gh)
-                        gx1c2 = min(W, dpx0 + gw)
+                        gh, gw = opmask.shape
+                        gy0c2 = max(0, opy0)
+                        gx0c2 = max(0, opx0)
+                        gy1c2 = min(H, opy0 + gh)
+                        gx1c2 = min(W, opx0 + gw)
                         if gy1c2 > gy0c2 and gx1c2 > gx0c2:
-                            search_zone[gy0c2:gy1c2, gx0c2:gx1c2] &= ~other_grown[
-                                gy0c2 - dpy0:gy1c2 - dpy0,
-                                gx0c2 - dpx0:gx1c2 - dpx0]
+                            search_zone[gy0c2:gy1c2, gx0c2:gx1c2] &= ~opmask[
+                                gy0c2 - opy0:gy1c2 - opy0,
+                                gx0c2 - opx0:gx1c2 - opx0]
                     if label_grow > 0:
                         search_zone = ndimage.binary_erosion(
                             search_zone, iterations=label_grow)
@@ -564,21 +556,18 @@ def _place_labels_post(sheets, regions, mm_per_pixel, cpx, W, H):
                 if zsy1 > zsy0 and zsx1 > zsx0:
                     raw_zone[zsy0:zsy1, zsx0:zsx1] = zmask[zsy0 - zy0:zsy1 - zy0,
                                                              zsx0 - zx0:zsx1 - zx0]
-                for pj, (opy0, opx0, opmask) in enumerate(ring_masks):
+                for pj, (opy0, opx0, opmask) in enumerate(ring_masks_grown):
                     if pj == pi:
                         continue
-                    other_grown = ndimage.binary_dilation(opmask, iterations=label_grow) if label_grow > 0 else opmask
-                    gh, gw = other_grown.shape
-                    dpy0 = opy0 - label_grow
-                    dpx0 = opx0 - label_grow
-                    gy0c2 = max(0, dpy0)
-                    gx0c2 = max(0, dpx0)
-                    gy1c2 = min(H, dpy0 + gh)
-                    gx1c2 = min(W, dpx0 + gw)
+                    gh, gw = opmask.shape
+                    gy0c2 = max(0, opy0)
+                    gx0c2 = max(0, opx0)
+                    gy1c2 = min(H, opy0 + gh)
+                    gx1c2 = min(W, opx0 + gw)
                     if gy1c2 > gy0c2 and gx1c2 > gx0c2:
-                        raw_zone[gy0c2:gy1c2, gx0c2:gx1c2] &= ~other_grown[
-                            gy0c2 - dpy0:gy1c2 - dpy0,
-                            gx0c2 - dpx0:gx1c2 - dpx0]
+                        raw_zone[gy0c2:gy1c2, gx0c2:gx1c2] &= ~opmask[
+                            gy0c2 - opy0:gy1c2 - opy0,
+                            gx0c2 - opx0:gx1c2 - opx0]
                 if is_mirrored:
                     py0_m, px0_m, pmask_m = part_masks[pi]
                     ph_m, pw_m = pmask_m.shape
@@ -667,6 +656,22 @@ class _Sheet:
         self.FO = None
         self.free = H * W
 
+def _build_cands_worker(args):
+    """Module-level worker for parallel candidate generation (must be picklable)."""
+    A, rg, arc_px, cpx, angles = args
+    F0 = _offset_poly(A, rg, arc_px=arc_px)
+    if F0 is None or len(F0) < 3:
+        return None, False
+    cands = []
+    for deg in angles:
+        th = math.radians(deg)
+        ca, sa = math.cos(th), math.sin(th)
+        Fr = np.column_stack([ca * F0[:, 0] - sa * F0[:, 1],
+                              sa * F0[:, 0] + ca * F0[:, 1]])
+        o = Fr.min(axis=0)
+        cands.append((th, _rasterise(Fr, o, cpx), o))
+    return cands, True
+
 def _nest_regions(regions, mm_per_pixel):
     """Raster nesting with inner-zone nesting. Returns (sheets, sheet_w, sheet_h);
     sheets maps a bin index to a list of {"r", "G" (2x3 matrix), "theta"}.
@@ -747,24 +752,49 @@ def _nest_regions(regions, mm_per_pixel):
             sh.free += total_freed
         return total_freed
 
-    for k in order:
-        r = regions[k]
-        A = _dedupe_consecutive(np.asarray(r["outer"], float))
-        if r["mirrored"]:
-            A = _mirror_pts(A, r["bbox"])
-        F0 = _offset_poly(A, rg, arc_px=FAB_ARC_TOL_FRAC * cpx)
-        if F0 is None or len(F0) < 3:
-            print(f"  ! layer {r['layer']}: could not offset outline, skipped")
-            continue
+    # Pre-compute candidates (offset + rotate + rasterise) for all regions.
+    # offset_poly (Clipper) is the bottleneck and holds the GIL, so use
+    # ProcessPoolExecutor with a module-level worker function.
+    from concurrent.futures import ProcessPoolExecutor
+    import os as _os
 
-        cands = []
-        for deg in FAB_NEST_ANGLES_DEG:
-            th = math.radians(deg)
-            ca, sa = math.cos(th), math.sin(th)
-            Fr = np.column_stack([ca * F0[:, 0] - sa * F0[:, 1],
-                                  sa * F0[:, 0] + ca * F0[:, 1]])
-            o = Fr.min(axis=0)
-            cands.append((th, _rasterise(Fr, o, cpx), o))
+    n_workers = min(_os.cpu_count() or 1, len(regions))
+    all_cands = {}
+    if n_workers > 1:
+        # Prepare serialisable args: (outer_pts, mirrored, bbox, rg, arc_px, cpx, angles)
+        args_list = []
+        for k in order:
+            r = regions[k]
+            A = _dedupe_consecutive(np.asarray(r["outer"], float))
+            if r["mirrored"]:
+                A = _mirror_pts(A, r["bbox"])
+            args_list.append((A, rg, FAB_ARC_TOL_FRAC * cpx, cpx,
+                              list(FAB_NEST_ANGLES_DEG)))
+        with ProcessPoolExecutor(max_workers=n_workers) as ex:
+            results = list(ex.map(_build_cands_worker, args_list))
+        for k, (cands, ok) in zip(order, results):
+            if ok:
+                all_cands[k] = cands
+            else:
+                print(f"  ! layer {regions[k]['layer']}: could not offset outline, skipped")
+    else:
+        for k in order:
+            r = regions[k]
+            A = _dedupe_consecutive(np.asarray(r["outer"], float))
+            if r["mirrored"]:
+                A = _mirror_pts(A, r["bbox"])
+            cands, ok = _build_cands_worker((A, rg, FAB_ARC_TOL_FRAC * cpx, cpx,
+                                             list(FAB_NEST_ANGLES_DEG)))
+            if ok:
+                all_cands[k] = cands
+            else:
+                print(f"  ! layer {r['layer']}: could not offset outline, skipped")
+
+    for k in order:
+        if k not in all_cands:
+            continue
+        r = regions[k]
+        cands = all_cands[k]
 
         placed = False
         for b in range(len(state) + 1):
